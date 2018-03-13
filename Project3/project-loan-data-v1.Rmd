@@ -1,0 +1,1437 @@
+makeHopeLive
+========================================================
+
+# Intruduction 
+
+This time, we will use Prosper loan data to do the following basic analysis, 
+what we want to find is that what factors will impact the 
+APR (Annuall Percentage Rate) and build one prediction model. 
+Meanwhile, we want to let Borrower know how they can reduce their BorrowerAPR.
+
+# Prepare Data
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages} 
+# Load all of the packages that you end up using in your analysis in this code
+# chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk. This
+# prevents the code from displaying in the knitted HTML output. You should set
+# echo=FALSE for all code chunks in your file, unless it makes sense for your
+# report to show the code that generated a particular plot.
+
+# The other parameters for "message" and "warning" should also be set to FALSE
+# for other code chunks once you have verified that each plot comes out as you
+# want it to. This will clean up the flow of your report.
+
+library(ggplot2)
+library(gridExtra)
+library(corrplot)
+library('PerformanceAnalytics')
+library('readxl')
+library(reshape2)
+library(dplyr)
+library(knitr)
+library('kableExtra')
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Load_the_Data}
+# Load the Data
+loan_data_original = read.csv('prosperLoanData.csv')
+```
+```{r echo=FALSE, Load_the_Data_Description}
+data_description = read_excel('Prosper Loan Data - Variable Definitions.xlsx')
+```
+
+Show the variables' basic meaning
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, caption="Data frame is now printed using `kable`."}
+loan_data = cbind(loan_data_original)
+data_description = as.data.frame(data_description)
+kable(data_description)
+```
+
+Show the structure of the data set. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+str(loan_data)
+```
+
+Wow, 81 variables, since not familar with loan data features, need to understand 
+them with the following exploration and web searching. 113937 obs, not small. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# will not show this part, too huge
+#summary(loan_data)
+```
+
+After checking the summary of the data set, why so many NA values? Part of them 
+have the same NA count, what causes the NA value? Confused. The information 
+should be calculated automatically, e.g., EstimatedEffectiveYield. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#subset(loan_data, is.na(AvailableBankcardCredit))
+```
+
+Why duplicate ListingKey? Subset the duplicate ListingKey data for example.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+kable(subset(loan_data[,c('ListingKey', 'ProsperScore')], loan_data$ListingKey 
+             == '17A93590655669644DB4C06'), align=c(rep('c', 2)))
+#subset(loan_data, ListingKey == '349D3587495831350F0F648')
+```
+
+The only difference is ProsperScore, how will cause the ProsperScore to change? 
+not understood. So, for each loan data, if prosperScore changes, will be saved 
+several times?
+
+# Univariate Plots Section
+
+The main objective for this article is to find what factors will impact the 
+BorrowerAPR, so we want to know the BorrowerAPR distribution firstly.
+
+#### BorrowerAPR
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$BorrowerAPR)
+ggplot(aes(x = BorrowerAPR), data = subset(loan_data, !is.na(BorrowerAPR))) + 
+  geom_density(stat = "density")
+```
+
+The most frequent BorrowerAPR should still be around 0.2. Another peak is 
+around 0.36
+
+Then we want to explore each variable one by one
+
+#### CreditGrade
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#summary(loan_data$CreditGrade)
+loan_data$CreditGrade = as.character(loan_data$CreditGrade)
+loan_data$CreditGrade = ifelse(loan_data$CreditGrade == 'NC', '',
+                               loan_data$CreditGrade)
+loan_data$CreditGrade = as.factor(loan_data$CreditGrade)
+loan_data$CreditGrade = factor(loan_data$CreditGrade,
+                               levels(loan_data$CreditGrade)[c(1,3,2,4:7)])
+summary(loan_data$CreditGrade)
+ggplot(aes(x = CreditGrade), data = 
+         subset(loan_data, !is.na(CreditGrade) & CreditGrade != '')) + 
+  geom_bar() + scale_y_continuous(breaks = seq(0, 6000, 1000))
+```
+
+What's the meaning of 'NC'? not correct? remove 'NC'. C Credit Grade is with big 
+probabiltiy, lots of loan records have no CreditGrade information, this is 
+reasonable, because CreditGrade is used for assessing the loan before 2009 July. 
+After 2009 July, we will use ProsperRating for each loan. As we know, 
+CreditGrade or ProsperRating should be one import factor that impacts the APR. 
+There's no "HR" level in CreditGrade, is 'NA' 'HR' level? 
+
+Something wrong here, NA value should be 'HR', change NA to HR. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+levels(loan_data$CreditGrade) = c('', 'AA', 'A', 'B', 'C', 'D', 'E', 'HR')
+loan_data$CreditGrade[is.na(loan_data$CreditGrade)] = 'HR'
+summary(loan_data$CreditGrade)
+ggplot(aes(x = CreditGrade), data = 
+         subset(loan_data,!is.na(CreditGrade) & CreditGrade != '')) + 
+  geom_bar(width = 0.5)
+```
+
+#### Term
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# change term to factor variable
+loan_data$Term = as.factor(loan_data$Term)
+summary(loan_data$Term)
+ggplot(aes(x = Term), data = subset(loan_data, !is.na(Term))) + 
+  geom_bar(width = 0.5)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#subset(loan_data, Term == 12)
+```
+
+Doubt that may Term 12 has been canceled in the latest prosper loan, however, 
+from the data, the creation time is not old, so this thought is wrong.
+
+There are just three values for Term variable, the most frequent one is 36, 
+three years. 
+
+#### LoanStatus
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$LoanStatus)
+ggplot(aes(x = LoanStatus), data = subset(loan_data, !is.na(LoanStatus))) + 
+  geom_bar(width = 0.5, las = 1) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  scale_y_continuous(breaks = seq(0, 60000, 10000)) + coord_flip ()
+```
+
+This LoanStatus is not the feature we care about for BorrowerAPR prediction, 
+however, this one may can be used for predicting what kind of loan will be 
+charged-off. This status WOW me, the probabiltiy for defaulted and charged-off 
+is not small.
+
+#### BorrowerRate
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$BorrowerRate)
+ggplot(aes(x = BorrowerRate), data = subset(loan_data, !is.na(BorrowerRate))) + 
+  geom_histogram(binwidth = 0.005)
+```
+
+This feature is highly related with BorrowerAPR, BorrowerAPR = BorrowerRate + 
+OrganizationFee. Will check whether organizationFee changes with Credit Grade or 
+not, from the introduction is Prosper company, seems yes.
+
+#### ProsperRating..numeric.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$ProsperRating..numeric.)
+#table(loan_data$ProsperRating..numeric.)
+ggplot(aes(x = ProsperRating..numeric.), data = 
+         subset(loan_data, !is.na(ProsperRating..numeric.))) + 
+  geom_bar(width = 0.5) + scale_x_continuous(breaks = seq(1, 7, 1))
+```
+
+Numerice and alpha value describe the same thing, so can just keep one
+
+#### ProsperRating..Alpha.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$ProsperRating..Alpha. = factor(loan_data$ProsperRating..Alpha., levels(loan_data$ProsperRating..Alpha.)[c(1,3,2,4:7)])
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$ProsperRating..Alpha.)
+ggplot(aes(x = ProsperRating..Alpha.), data = 
+         subset(loan_data,!is.na(ProsperRating..Alpha.) & 
+                  ProsperRating..Alpha. != '')) + geom_bar(width = 0.5)
+```
+
+Something wrong here, NA value should be 'HR', change NA to HR.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+levels(loan_data$ProsperRating..Alpha.) = c('', 'AA', 'A', 'B', 'C', 'D', 'E', 
+                                            'HR')
+loan_data$ProsperRating..Alpha.[is.na(loan_data$ProsperRating..Alpha.)] = 'HR'
+summary(loan_data$ProsperRating..Alpha.)
+ggplot(aes(x = ProsperRating..Alpha.), data = 
+         subset(loan_data,!is.na(ProsperRating..Alpha.) & 
+                  ProsperRating..Alpha. != '')) + 
+  geom_bar(width = 0.5)
+```
+
+As we talked before, combine CreditGrade and ProsperRating two columns to one 
+column CreditRating that can describe the credit value.
+
+#### Create CreditRating
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$CreditRating = ifelse(loan_data$CreditGrade == '', 
+                                as.character(loan_data$ProsperRating..Alpha.), as.character(loan_data$CreditGrade))
+loan_data$CreditRating = as.factor(loan_data$CreditRating)
+summary(loan_data$CreditRating)
+```
+
+Still have 131 loans that are with no CreditRating information.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$CreditRating = factor(loan_data$CreditRating, 
+                                levels(loan_data$CreditRating)[c(1,3,2,4:8)])
+summary(loan_data$CreditRating)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = CreditRating), data = subset(loan_data, !is.na(CreditRating) & 
+                                              CreditRating != '')) + 
+  geom_bar(width = 0.5)
+```
+
+All the credit information is combined. best -> worst, 'AA' -> 'HR'.
+
+#### ProsperScore
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$ProsperScore = as.factor(loan_data$ProsperScore)
+summary(loan_data$ProsperScore)
+ggplot(aes(x = ProsperScore), data = subset(loan_data, !is.na(ProsperScore))) + 
+  geom_bar(width = 0.5)
+```
+
+why there's 11? in data decription file, 10 should be the highest value. What 
+ever, best -> worst, 11 -> 1.
+
+#### ListingCategory..numeric.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$ListingCategory..numeric.)
+ggplot(aes(x = ListingCategory..numeric.), 
+       data = subset(loan_data, !is.na(ListingCategory..numeric.))) + 
+  geom_bar(width = 0.5) + scale_x_continuous(breaks = seq(0, 20, 1))
+```
+
+The biggest probability is used for Debt consolication.
+
+#### BorrowerState
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#summary(loan_data$BorrowerState)
+ggplot(aes(x = BorrowerState), 
+       data = subset(loan_data, !is.na(BorrowerState))) + 
+  geom_bar(width = 0.5) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Did not understand the meaning of the two letter abbreviation.
+
+#### Occupation
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#summary(loan_data$Occupation)
+ggplot(aes(x = Occupation), data = subset(loan_data, !is.na(Occupation))) + 
+  geom_bar(width = 0.5) + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+The occupation should not be one key feature. Most borrowers choose the 
+professional.
+
+#### EmploymentStatus
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$EmploymentStatus)
+ggplot(aes(x = EmploymentStatus), 
+       data = subset(loan_data, !is.na(EmploymentStatus) & 
+                       EmploymentStatus != '')) + 
+  geom_bar(width = 0.5) 
+```
+
+The classes of EmploymentStatus are weired, employed, not employed, what's the 
+relationshipe between employed and Full-time, Part-time. Want to combine the 
+levels to just two, employed and not employed.
+
+#### Create EmploymentFlag
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$EmploymentFlag = ifelse(loan_data$EmploymentStatus != 'Not employed', 
+                                  'Employed', 'Not employed')
+loan_data$EmploymentFlag = as.factor(loan_data$EmploymentFlag)
+summary(loan_data$EmploymentFlag)
+```
+
+Most borrowers are employed.
+
+#### EmploymentStatusDuration
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$EmploymentStatusDuration)
+ggplot(aes(x = EmploymentStatusDuration), 
+       data = subset(loan_data, !is.na(EmploymentStatusDuration))) + 
+  geom_histogram(binwidth = 6)
+```
+
+This is one long tail variable.
+
+#### IsBorrowerHomeowner
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$IsBorrowerHomeowner)
+ggplot(aes(x = IsBorrowerHomeowner), 
+       data = subset(loan_data, !is.na(IsBorrowerHomeowner))) + 
+  geom_bar(width = 0.5)
+```
+
+False and True are nearly 50% and 50%.
+
+CreditScoreRangeLower and Upper should be combined into one range column, like 
+income range. 
+
+#### Create CreditScoreRange
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$CreditScoreRange = paste0('[', loan_data$CreditScoreRangeLower, '-', loan_data$CreditScoreRangeUpper, ']')
+#levels(loan_data$CreditScoreRange)
+loan_data$CreditScoreRange = 
+  ifelse(loan_data$CreditScoreRange == '[NA-NA]', NA, loan_data$CreditScoreRange)
+loan_data$CreditScoreRange = as.factor(loan_data$CreditScoreRange)
+#summary(loan_data$CreditScoreRange)
+ggplot(aes(x = CreditScoreRange), 
+       data = subset(loan_data, !is.na(CreditScoreRange))) + 
+  geom_bar(width = 0.5) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Most Borrowers credit score in range 640 - 740. The uppper value = lower value + 
+19, so we can just keep one for the next revision. 
+
+Try to build a new feature to reduce the CreditScoreRange level so check whether 
+will improve the relationship 
+
+#### Create CreditScoreRevision
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$CreditScoreRevision = cut(loan_data$CreditScoreRangeLower, 
+                                    c(0, 640, 680, 720, 760, 800, 840, 880))
+ggplot(aes(x = CreditScoreRevision), 
+       data = subset(loan_data, !is.na(CreditScoreRevision))) + 
+  geom_bar(width = 0.5)
+```
+
+Add one variable to judge the length of credit history, the longer history, 
+should the lower APR.
+
+#### Create LengthHistory
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$ListingCreationDate = as.Date(loan_data$ListingCreationDate)
+loan_data$FirstRecordedCreditLine = as.Date(loan_data$FirstRecordedCreditLine)
+loan_data$LengthHistory = loan_data$ListingCreationDate - 
+  loan_data$FirstRecordedCreditLine
+ggplot(aes(x = LengthHistory), 
+       data = subset(loan_data, !is.na(LengthHistory))) + 
+  geom_histogram()
+```
+
+The unit is day.
+
+#### OpenRevolvingAccounts
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$OpenRevolvingAccounts)
+#table(loan_data$OpenRevolvingAccounts)
+ggplot(aes(x = OpenRevolvingAccounts), 
+       data = subset(loan_data, !is.na(OpenRevolvingAccounts))) + 
+  geom_bar(width = 0.5)
+```
+
+The most frequent count is around 5.
+
+#### InquiriesLast6Months and TotalInquiries
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$InquiriesLast6Months)
+#table(loan_data$InquiriesLast6Months)
+summary(loan_data$TotalInquiries)
+#table(loan_data$TotalInquiries)
+p1 = ggplot(aes(x = InquiriesLast6Months), 
+            data = subset(loan_data, !is.na(InquiriesLast6Months))) + 
+  geom_histogram() + 
+  scale_x_log10(breaks = c(0, 1, 3, 10, 30, 100))
+p2 = ggplot(aes(x = '', y = InquiriesLast6Months), 
+            data = subset(loan_data, !is.na(InquiriesLast6Months))) + 
+  geom_boxplot(alpha = 1/4) + ylab('') + 
+  xlab('InquiriesLast6Months')
+p3 = ggplot(aes(x = TotalInquiries), 
+            data = subset(loan_data, !is.na(TotalInquiries))) + 
+  geom_bar(width = 0.5) + 
+  scale_x_log10(breaks = c(0, 1, 3, 10, 30, 100))
+p4 = ggplot(aes(x = '', y = TotalInquiries), 
+            data = subset(loan_data, !is.na(TotalInquiries))) + 
+  geom_boxplot(alpha = 1/4) + 
+  ylab('') + 
+  xlab('TotalInquiries')
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
+```
+
+Most InquiriesLast6Months are smaller than 2, outliers can be up to around 100. 
+Most TotalInquiries are smaller than 10, some of outliers can be up to around 
+300.
+
+#### CurrentDelinquencies and AmountDelinquent
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$CurrentDelinquencies)
+summary(loan_data$AmountDelinquent)
+#table(loan_data$CurrentDelinquencies)
+p1 = ggplot(aes(x = CurrentDelinquencies), 
+            data = subset(loan_data, !is.na(CurrentDelinquencies))) + 
+  geom_histogram() + 
+  scale_x_log10(breaks = c(0, 1, 3, 10, 30, 100)) 
+p2 = ggplot(aes(x = '', y = CurrentDelinquencies), 
+            data = subset(loan_data, !is.na(CurrentDelinquencies))) + 
+  geom_boxplot(alpha = 1/4) + ylab('') + 
+  xlab('CurrentDelinquencies')
+p3 = ggplot(aes(x = AmountDelinquent), 
+            data = subset(loan_data, !is.na(AmountDelinquent))) + 
+  geom_histogram() + 
+  scale_x_log10()
+p4 = ggplot(aes(x = '', y = AmountDelinquent), 
+            data = subset(loan_data, !is.na(AmountDelinquent))) + 
+  geom_boxplot(alpha = 1/4) + ylab('') + 
+  xlab('AmountDelinquent')
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
+```
+
+75% CurrentDelinquencies is 0, most of CurrentDelinquence is smaller than 10, 
+the outlier can be up to 80. The most frequent amountDelinquent not 0 is 
+around 1000.
+
+#### DelinquenciesLast7Years and TradesNeverDelinquent..percentage.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$DelinquenciesLast7Years)
+summary(loan_data$TradesNeverDelinquent..percentage.)
+#table(loan_data$DelinquenciesLast7Years)
+p1 = ggplot(aes(x = DelinquenciesLast7Years), 
+            data = subset(loan_data, !is.na(DelinquenciesLast7Years))) + 
+  geom_histogram() + 
+  scale_x_log10(breaks = c(1, 3, 10, 30)) 
+p2 = ggplot(aes(x = '', y = DelinquenciesLast7Years), 
+            data = subset(loan_data, !is.na(DelinquenciesLast7Years))) + 
+  geom_boxplot(alpha = 1/4) + ylab('') + 
+  xlab('DelinquenciesLast7Years')
+p3 = ggplot(aes(x = TradesNeverDelinquent..percentage.), 
+            data = subset(loan_data, 
+                          !is.na(TradesNeverDelinquent..percentage.))) + 
+  geom_histogram()
+p4 = ggplot(aes(x = '', y = TradesNeverDelinquent..percentage.), 
+            data = subset(loan_data, 
+                          !is.na(TradesNeverDelinquent..percentage.))) + 
+  geom_boxplot(alpha = 1/4) + 
+  ylab('') + 
+  xlab('TradesNeverDelinquent..percentage.')
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
+```
+
+The variance of TradesNeverDelinquent..percentage. is not so small, except the 
+25% borrowers, the other ones all have ever missed the repayment time. However, 
+for DelinquenciesLast7Years, 50% borrowers have 0 delinquence. 
+
+#### PublicRecordsLast12Months and PublicRecordsLast10Years
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$PublicRecordsLast12Months)
+summary(loan_data$PublicRecordsLast10Years)
+#table(loan_data$PublicRecordsLast12Months)
+p1 = ggplot(aes(x = PublicRecordsLast12Months), 
+            data = subset(loan_data, !is.na(PublicRecordsLast12Months))) + 
+  geom_histogram() + 
+  scale_x_log10(breaks = c(1, 3, 10))
+p2 = ggplot(aes(x = '', y = PublicRecordsLast12Months), 
+            data = subset(loan_data, !is.na(PublicRecordsLast12Months))) + 
+  geom_boxplot(alpha = 1/4) + ylab('') + 
+  xlab('PublicRecordsLast12Months')
+p3 = ggplot(aes(x = PublicRecordsLast10Years), 
+            data = subset(loan_data, !is.na(PublicRecordsLast10Years))) + 
+  geom_histogram()  + 
+  scale_x_log10(breaks = c(1, 3, 10, 30, 100))
+p4 = ggplot(aes(x = '', y = PublicRecordsLast10Years), 
+            data = subset(loan_data, !is.na(PublicRecordsLast10Years))) + 
+  geom_boxplot(alpha = 1/4) + ylab('') + 
+  xlab('PublicRecordsLast10Years')
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
+```
+
+For this type of variable, actually, want to check, if ignore 0 value, will 
+increase the relationshipe between it and BorrowerAPR? 
+
+#### RevolvingCreditBalance
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$RevolvingCreditBalance)
+#table(loan_data$RevolvingCreditBalance)
+ggplot(aes(x = RevolvingCreditBalance), 
+       data = subset(loan_data, !is.na(RevolvingCreditBalance))) + 
+  geom_histogram() + 
+  scale_x_log10()
+```
+
+The most frequent value is around 1e+04
+
+#### BankcardUtilization and AvailableBankcardCredit
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$BankcardUtilization)
+summary(loan_data$AvailableBankcardCredit)
+#table(loan_data$BankcardUtilization)
+p1 = ggplot(aes(x = BankcardUtilization), 
+            data = subset(loan_data, !is.na(BankcardUtilization))) + 
+  geom_histogram()
+p2 = ggplot(aes(x = '', y = BankcardUtilization), 
+            data = subset(loan_data, !is.na(BankcardUtilization))) + 
+  geom_boxplot(alpha = 1/4) + 
+  ylab('') + 
+  xlab('BankcardUtilization')
+p3 = ggplot(aes(x = AvailableBankcardCredit), 
+            data = subset(loan_data, !is.na(AvailableBankcardCredit))) + 
+  geom_histogram() + 
+  scale_x_log10()
+p4 = ggplot(aes(x = '', y = AvailableBankcardCredit), 
+            data = subset(loan_data, !is.na(AvailableBankcardCredit))) + 
+  geom_boxplot(alpha = 1/4) + 
+  ylab('') + 
+  xlab('AvailableBankcardCredit')
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
+```
+
+Most BankcardUtilization is smaller than 1, the most frequent 
+AvailableBankcardCredit is around 10000.
+
+#### DebtToIncomeRatio
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+Debt = subset(loan_data, !is.na(DebtToIncomeRatio))
+summary(loan_data$DebtToIncomeRatio)
+ggplot(aes(x = DebtToIncomeRatio), 
+       data = subset(loan_data, !is.na(DebtToIncomeRatio))) + 
+  geom_histogram(binwidth = 0.005) + 
+  xlim(0,quantile(Debt$DebtToIncomeRatio, 0.9))
+```
+
+The most frequent one is around 0.2.
+
+#### IncomeRange
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#summary(loan_data$IncomeRange)
+ggplot(aes(x = IncomeRange), 
+       data = subset(loan_data, !is.na(IncomeRange))) + 
+  geom_bar(width = 0.5) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + coord_flip()
+```
+
+What's the meaning of 'not displayed', what's the difference between 
+'not employed' and '$0'?
+
+#### IncomeVerifiable
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$IncomeVerifiable)
+ggplot(aes(x = IncomeVerifiable), 
+       data = subset(loan_data, !is.na(IncomeVerifiable))) + 
+  geom_bar(width = 0.5)
+```
+
+Most borrowers are IncomeVerifiable
+
+#### Save the revision data
+
+```{r echo=FALSE}
+write.csv(x = loan_data, file = 'prosperLoanDataRevise.csv')
+```
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+
+There are 113937 obs. of  81 variables in this dataset. Each observation is one 
+loan record. The dataset is collected from Prosper webBank, who is America's 
+frist peer-to-peer lending marketplace. Borrowers request personal loans and 
+inverstor fund. Knowing more background will make us understand the data more 
+easily and  clearly. 
+
+### What is/are the main feature(s) of interest in your dataset?
+
+Since this is one loan dataset, we care most is the BorrowerAPR. We want to 
+known what factors will impact the BorrowerAPR and build one prediction model. 
+The basic one should be CreditRating, however, some combination of other 
+variables should also be used to build the prediction model. 
+
+
+### What other features in the dataset do you think will help support your \
+investigation into your feature(s) of interest?
+
+In my view, the features may imapct the BorrowerAPR includes at least: 
+ProsperScore, EmploymentStatus, EmploymentFlag, IsBorrowerHomeowener, 
+CreditScoreRange, OpenRevolvingAccounts, InquireisLast6Months, 
+CurrentDelinquencies, AmountDelinquent, DelinquenciesLast7Years, 
+PublicRecordsLast10Years, PublicRecordsLast12Months, BankcardUtilization, 
+AvailableBankcardCredit, TradesNeverDelinquent, DebtToIncomeRatio, IncomeRange, 
+IncomeVerifiable, LengthHistory etc. 
+
+After lots of research, find that the five important components for credit 
+score, i.e., payment history, credit utilization, length of credit history, 
+new credit and credit mix. The features in data set almost all have relationship 
+with the five components. However, except CreditRating, ProsperScore, 
+CreditScoreRange, which already take acount of the whole history information, 
+Delinquency part, PublicRecords part, BankcardUtilization, 
+AvailableBankcardCredit, DebtToIncomeRatio, LengthHistory should be the most 
+related features.
+
+### Did you create any new variables from existing variables in the dataset?
+
+Since CreditGrade is used for period before July, 2009 and ProsperRating is 
+used fo period after July, 2009, i combine them to one CreditRating feature. 
+
+Create a variable EmploymentFlag to classify the emopolyment status to employed 
+and not employed, will check more in the Bivariate Plots Section. 
+
+Create a variable CreditScoreRange to describe CrediteScoreRangeLower and Upper 
+more directly. And then create a variable CreditRevision to reduce the levels.
+
+Create a variable LengthHistory to judge the length of credit history.
+
+### Of the features you investigated, were there any unusual distributions? \
+Did you perform any operations on the data to tidy, adjust, or change the form \
+of the data? If so, why did you do this?
+
+GreditGrade and ProsperRating miss 'HR' level, change the NA value to 'HR', 
+since ProsperRating(numeric) use 1 for 'HR'.
+
+Change Term, ProsperScore to factor, since just limited levels.
+
+Change FirstRecordedCreditLine and ListingCreationDate to Datetime 
+
+# Bivariate Plots Section
+
+Select the variables we most care about to get the subset to calculate the 
+relationship between each other
+
+```{r echo=FALSE, Bivariate_Plots}
+sub_col = c('BorrowerAPR', 'BorrowerRate', 'CreditRating', 'Term', 
+            'ProsperScore', 'ListingCategory..numeric.', 'EmploymentFlag', 
+            'IsBorrowerHomeowner', 'CreditScoreRange', 
+            'TotalCreditLinespast7years', 'InquiriesLast6Months', 
+            'TotalInquiries', 'CurrentDelinquencies', 'AmountDelinquent', 
+            'DelinquenciesLast7Years', 'PublicRecordsLast12Months', 
+            'BankcardUtilization', 'AvailableBankcardCredit', 'TotalTrades', 'TradesNeverDelinquent..percentage.', 'DebtToIncomeRatio', 'IncomeRange', 
+            'IncomeVerifiable', 'LengthHistory', 'CreditScoreRevision')
+sub_loan_data = loan_data[, sub_col]
+```
+
+Correlation matrix
+
+```{r echo=FALSE}
+#how to calculate the correlation
+sub_loan_data$EmploymentFlag = as.numeric(loan_data$EmploymentFlag)
+sub_loan_data$IsBorrowerHomeowner = as.numeric(loan_data$IsBorrowerHomeowner)
+sub_loan_data$IncomeVerifiable = as.numeric(loan_data$IncomeVerifiable)
+sub_loan_data$CreditRating = as.numeric(loan_data$CreditRating)
+sub_loan_data$IncomeRange = as.numeric(loan_data$IncomeRange)
+sub_loan_data$Term = as.numeric(loan_data$Term)
+sub_loan_data$ProsperScore = as.numeric(loan_data$ProsperScore)
+sub_loan_data$CreditScoreRange = as.numeric(loan_data$CreditScoreRange)
+sub_loan_data$LengthHistory = as.numeric(loan_data$LengthHistory)
+sub_loan_data$CreditScoreRevision = as.numeric(loan_data$CreditScoreRevision)
+```
+
+```{r echo=FALSE}
+#calculate the correlation
+cor_matrix = cor(sub_loan_data, use = "pairwise.complete.obs")
+rownames(cor_matrix) = c('BA', 'BR', 'CR', 'T', 'PS', 'LC', 'EF', 'IB', 'CS', 
+                         'TC', 'IL', 'TI', 'CD', 'AD', 'DL', 'PR', 'BU', 'AB', 
+                         'TT', 'TN', 'DI', 'IR', 'IV', 'LH', 'CSR' )
+colnames(cor_matrix) = c('BA', 'BR', 'CR', 'T', 'PS', 'LC', 'EF', 'IB', 'CS', 
+                         'TC', 'IL', 'TI', 'CD', 'AD', 'DL', 'PR', 'BU', 'AB', 
+                         'TT', 'TN', 'DI', 'IR', 'IV', 'LH', 'CSR' )
+#cor_matrix
+corrplot(cor_matrix, method = 'color', 
+         title = 'Correlation between potential key features', order = 'FPC',  
+         mar=c(0,0,1,0), tl.col = 'black')
+```
+
+Select the relationship: Very Strong (0.8 - 1), Strong (0.6 - 0.8), 
+Moderate (0.4 - 0.6), Weak (0.2 - 0.4)
+ 
+```{r echo=FALSE}
+rownames(cor_matrix) = c('BorrowerAPR', 'BorrowerRate', 'CreditRating', 'Term', 
+            'ProsperScore', 'ListingCategory..numeric.', 'EmploymentFlag', 
+            'IsBorrowerHomeowner', 'CreditScoreRange', 
+            'TotalCreditLinespast7years', 'InquiriesLast6Months', 
+            'TotalInquiries', 'CurrentDelinquencies', 'AmountDelinquent', 
+            'DelinquenciesLast7Years', 'PublicRecordsLast12Months', 
+            'BankcardUtilization', 'AvailableBankcardCredit', 'TotalTrades', 'TradesNeverDelinquent..percentage.', 'DebtToIncomeRatio', 'IncomeRange', 
+            'IncomeVerifiable', 'LengthHistory', 'CreditScoreRevision')
+colnames(cor_matrix) = c('BorrowerAPR', 'BorrowerRate', 'CreditRating', 'Term', 
+            'ProsperScore', 'ListingCategory..numeric.', 'EmploymentFlag', 
+            'IsBorrowerHomeowner', 'CreditScoreRange', 
+            'TotalCreditLinespast7years', 'InquiriesLast6Months', 
+            'TotalInquiries', 'CurrentDelinquencies', 'AmountDelinquent', 
+            'DelinquenciesLast7Years', 'PublicRecordsLast12Months', 
+            'BankcardUtilization', 'AvailableBankcardCredit', 'TotalTrades', 'TradesNeverDelinquent..percentage.', 'DebtToIncomeRatio', 'IncomeRange', 
+            'IncomeVerifiable', 'LengthHistory', 'CreditScoreRevision')
+cor_melt = melt(cor_matrix)
+very_strong = subset(cor_melt, abs(cor_melt$value) >= 0.8 & 
+                       cor_melt$Var1 !=  cor_melt$Var2)
+very_strong = very_strong[!duplicated(very_strong['value']), ]
+very_strong = very_strong[order(-abs(very_strong['value'])), ]
+strong = subset(cor_melt, abs(cor_melt$value) >= 0.6 & 
+                  abs(cor_melt$value) < 0.8 & cor_melt$Var1 !=  cor_melt$Var2)
+strong = strong[!duplicated(strong['value']), ]
+strong = strong[order(-abs(strong['value'])), ]
+moderate = subset(cor_melt, abs(cor_melt$value) >= 0.4 & 
+                    abs(cor_melt$value) < 0.6 & cor_melt$Var1 !=  cor_melt$Var2)
+moderate = moderate[!duplicated(moderate['value']), ]
+moderate = moderate[abs(order(-moderate['value'])), ]
+weak = subset(cor_melt, abs(cor_melt$value) >= 0.2 & 
+                abs(cor_melt$value) < 0.4 & cor_melt$Var1 !=  cor_melt$Var2)
+weak = weak[!duplicated(weak['value']), ]
+weak = weak[order(-abs(weak['value'])), ]
+all = rbind(very_strong, strong, moderate, weak)
+rownames(all) = NULL
+kable(all, "html") %>% kable_styling(full_width = F, position = "left")
+```
+
+From the correlation figure, we can see that there's very strong relationship 
+between variable BorrowerAPR and CreditRating, this meets our expectation, the 
+higher CreditRating is, the lower BorrowerAPR should be. 
+
+Moreover, there's strong relationship between variable BorrowerAPR and 
+ProsperScore while meanwhile CreditRating also has strong relationship with 
+ProsperScore.
+
+BorrowerAPR has moderate relationship with CreditScoreRevision while 
+CreditRating also has strong relationship with CreditScoreRevision. 
+
+BorrowerAPR has weak relationship with BankcardUtilization, 
+AvaliableBankcardCredit and TradesNeverDelinquent. Meanwhile, they have weak 
+relationship between each other. Moreover, they have moderate relationship 
+with CreditScoreRange.
+
+InquiriesLast6Months has strong relationship with TotalInquiries, reasonable.
+
+Intesting, IncomeVefiable has strong relationship with DebtToIncomeRatio, why?
+
+TradesNeverDelinquent has moderate relationship with CurrentDelinquencies, 
+DelinquenciesLast7Years, which makes sense. 
+
+lots of weak relationship.
+
+The created variables' value is not that obvious. CreditScoreRevision 
+imporves a little compared CreditScoreRange. Will use CreditScoreRevision for 
+the following analysis. 
+
+have not found the variables that are related to BorrowerAPR while not related 
+to CreditRating
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#pdf("overlap.pdf")
+#chart.Correlation(sub_loan_data, histogram=TRUE, pch=19)
+```
+
+#### Orgination fee of CreditRating
+
+One idea bingo, want to know whether the orgination fee changes with 
+CreditRating, so we will build one variable OrginationFee and visulize it.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$OrginationFee = loan_data$BorrowerAPR - loan_data$BorrowerRate
+ggplot(aes(x = CreditRating, y = OrginationFee), 
+       data = subset(loan_data, !is.na(BorrowerAPR) &
+                                         CreditRating != '')) + 
+  geom_boxplot(alpha = 1/4, color = 'black')
+```
+
+We can see that the orgination fee also changes with the CreditRationg level. 
+The obvious diff is between level 'AA' and level "A".
+
+#### BorrowerAPR of CreditRating
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p1 = ggplot(aes(x = CreditRating, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) &
+                            !is.na(CreditRating) &
+                            CreditRating != '')) + 
+  geom_boxplot(alpha = 1/20, color = 'black')
+
+p2 = ggplot(aes(x = CreditRating, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) &
+                            !is.na(CreditRating) & 
+                            CreditRating != '')) + 
+  geom_violin(alpha = 1/100, color = 'black')
+
+grid.arrange(p1, p2, nrow=2)
+```
+
+The result meets our expectation as mentioned before, However, why there are 
+lots of outliers and the variance is not small? it seems there are still other 
+variables control the BorrowerAPR trendency, their influence can not be ignored. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# want to get more detail for why so big variance, which feature contribute to 
+# this?
+ratingA = subset(loan_data, CreditRating == 'A')
+ggplot(aes(x = ProsperScore, y = BorrowerAPR), 
+       data = subset(ratingA, !is.na(BorrowerAPR) & !is.na(ProsperScore))) + 
+  geom_boxplot(alpha = 1/4, color = 'black') 
+``` 
+
+Keep CreditRating fixed, chech the influence of ProsperScore.
+
+#### BorrowerAPR of ProsperScore
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p1 = ggplot(aes(x = ProsperScore, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            !is.na(ProsperScore))) + 
+  geom_boxplot(alpha = 1/20, color = 'black')
+
+p2 = ggplot(aes(x = ProsperScore, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            !is.na(ProsperScore))) + 
+  geom_violin(alpha = 1/100, color = 'black')
+
+grid.arrange(p1, p2, nrow=2)
+```
+
+As the correlation value calculated before, strong relationship between 
+BorrowerAPR and ProsperScore. 
+
+Plot the relationship between ProsperScore and CreditRating. Confused, how to 
+get the CreditRating? how to calculate the ProsperScore?
+
+#### CreditRating vs ProsperScore
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = ProsperScore), data = subset(loan_data, !is.na(ProsperScore))) + 
+  geom_bar(width = 0.5, aes(fill = CreditRating)) + 
+  scale_fill_brewer(palette = "GnBu")
+```
+
+From the figure, we can see, part of 'AA' borrowers still have high risk score, 
+e.g., 4. Therefore, we still should keep the ProsperScore feature, it can 
+descirbe a different dimension for BorrowerAPR prediction.
+
+#### BorrowerAPR of CreditScoreRange
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#summary(loan_data$CreditScoreRange)
+
+p1 = ggplot(aes(x = CreditScoreRange, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            !is.na(CreditScoreRange))) + 
+  geom_boxplot(alpha = 1/20, color = 'black') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+p2 = ggplot(aes(x = CreditScoreRange, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            !is.na(CreditScoreRange))) + 
+  geom_violin(alpha = 1/100, color = 'black') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+grid.arrange(p1, p2, nrow=2)
+```
+
+The sample number in both tail side is not enough, e.g., [0 - 440]. The score 
+is got from customer credit rating agency, still that quesion, how to get 
+credit rating?
+
+#### CreditRating vs CreditScoreRange
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = CreditScoreRange), 
+       data = subset(loan_data, !is.na(CreditScoreRange))) + 
+  geom_bar(width = 0.5, aes(fill = CreditRating)) + 
+  scale_fill_brewer(palette = "GnBu") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+From the figure, we can see CreditRating 'AA' borrowers may have a low 
+CreditScore, why? Whatever, CreditScoreRange is still one important feature for 
+the prediction.
+
+Try to reduce the levels for CreditScoreRange to check whether can imporve the 
+correlation value by this way.
+
+#### BorrowerAPR of CreditScoreRevision
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(loan_data$CreditScoreRevision)
+
+p1 = ggplot(aes(x = CreditScoreRevision, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            !is.na(CreditScoreRevision))) + 
+  geom_boxplot(alpha = 1/20, color = 'black')
+
+p2 = ggplot(aes(x = CreditScoreRevision, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            !is.na(CreditScoreRevision))) + 
+  geom_violin(alpha = 1/100, color = 'black')
+
+grid.arrange(p1, p2, nrow=2)
+```
+
+Emmm, more clear than CreditScoreRange.
+
+#### BorrowerAPR of BankcardUtilization
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = BankcardUtilization, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BankcardUtilization) & 
+                       !is.na(BorrowerAPR))) + 
+  geom_point(alpha = 1/4, color = 'black') + 
+  geom_smooth(method = 'lm') + 
+  xlim(0, quantile(subset(loan_data$BankcardUtilization, 
+                          !is.na(loan_data$BankcardUtilization)), 0.9))
+```
+
+If understand correctly, this BankcardUtilization should mean ratio of your 
+credit card balances to credit limits. The higher the BankcardUtilization, 
+the higher BorrowerAPR, because high BankcardUtilization will make lender to 
+think that there's an increased risk.
+
+#### BorrowerAPR of BankcardUtilization
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = AvailableBankcardCredit, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(AvailableBankcardCredit) & 
+                       !is.na(BorrowerAPR))) + 
+  geom_point(alpha = 1/4, color = 'black') + 
+  geom_smooth(method = 'lm') + 
+  xlim(0, quantile(subset(loan_data$AvailableBankcardCredit, 
+                          !is.na(loan_data$AvailableBankcardCredit)), 0.9))
+```
+
+Bases on before correlation calculation output, we know AvailableBankcardCredit 
+should have weak relationship with BorrowerAPR, this figure shows this. With 
+present knowledge, credit limits = credit balance + credit pending transaction + 
+avaliable credit. This feature can show the credit limits inderectly.
+
+#### BorrowerAPR of TradesNeverDelinquent..percentage.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = (TradesNeverDelinquent..percentage.), y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR)  & 
+                       !is.na(TradesNeverDelinquent..percentage.) )) + 
+  geom_point(alpha = 1/4, color = 'black') + 
+  geom_smooth(method = 'lm')
+```
+
+The higher radesNeverDelinquent..percentage., the lower BorrowerAPR.
+
+#### BorrowerAPR of EmploymentStatus and EmploymentFlag
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p1 = ggplot(aes(x = EmploymentStatus, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            EmploymentStatus != '')) + 
+  geom_boxplot(alpha = 1/4, color = 'black')
+p2 = ggplot(aes(x = EmploymentFlag, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            !is.na(EmploymentFlag))) + 
+  geom_boxplot(alpha = 1/4, color = 'black')
+grid.arrange(p1, p2, nrow = 2)
+```
+
+There's no clear trend in EmploymentStatus figure, however, we can see the 
+BorrowerAPR of 'Not employed' is obviously larger than other classes. So, 
+create a new variable EmploymentFlag to check more.
+
+This should be clear now, Employed may get a low Borrower APR, but why the 
+correlation value is low between BorrowerAPR and EmployedFlag? If we check more 
+carefully, the tail below 25% seems long.
+
+#### BorrowerAPR of CurrentDelinquencies and AmountDelinquent
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p1 = ggplot(aes(x = factor(CurrentDelinquencies), y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            !is.na(CurrentDelinquencies) & 
+                            CurrentDelinquencies<4)) + 
+  geom_boxplot(alpha = 1/4, color = 'black') + geom_smooth(method = 'lm')
+p2 = ggplot(aes(x = AmountDelinquent, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR))) + 
+  geom_point(alpha = 1/4, color = 'black') + 
+  geom_smooth(method = 'lm') + 
+  xlim(0, quantile(subset(loan_data$AmountDelinquent, 
+                          !is.na(loan_data$AmountDelinquent)), 0.9))
+grid.arrange(p1, p2, nrow = 2)
+```
+
+The Trend is not that obvious, just a little move upward. However, for 
+CurrentDelinquencies, the diff betweet 0 and 1 is much bigger than the diff 
+between 1 and 2, 2 and 3. 
+
+#### BorrowerAPR of DelinquenciesLast7Years
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = DelinquenciesLast7Years, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR) & 
+                       !is.na(DelinquenciesLast7Years))) + 
+  geom_point(alpha = 1/4, color = 'black') + geom_smooth(method = 'lm')
+```
+
+The trend is a little more obvious than CurrentDelinquencies and 
+AmountDelinquent.
+
+#### BorrowerAPR of IsBorrowerHomeowner
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = IsBorrowerHomeowner, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR) & 
+                       !is.na(IsBorrowerHomeowner))) + 
+  geom_boxplot(alpha = 1/4, color = 'black')
+```
+
+The trend is not that obvious.
+
+#### BorrowerAPR of InquiriesLast6Months
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = factor(InquiriesLast6Months), y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR) & 
+                       InquiriesLast6Months < 5)) + 
+  geom_boxplot(alpha = 1/4, color = 'black')
+```
+
+The Trend is not that obvious, just a little move upward.
+
+#### BorrowerAPR of TotalTrades
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = TotalTrades, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR))) + 
+  geom_point(alpha = 1/4, color = 'black') + 
+  geom_smooth(method = 'lm')
+```
+
+The Trend is not that obvious.
+
+#### BorrowerAPR of DebtToIncomeRatio
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = DebtToIncomeRatio, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR))) + 
+  geom_jitter(alpha = 1/4, color = 'black') + 
+  geom_smooth(method = 'lm')
+```
+
+As what
+
+#### BorrowerAPR of OpenRevolvingAccounts
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = OpenRevolvingAccounts, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR))) + 
+  geom_point(alpha = 1/4, color = 'black') + 
+  geom_smooth(method = 'lm') 
+```
+
+#### BorrowerAPR of IncomeRange
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+loan_data$IncomeRange = factor(loan_data$IncomeRange, 
+                               levels(loan_data$IncomeRange)[c(8,1,2,4:7,3)])
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = IncomeRange, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR))) + 
+  geom_boxplot(alpha = 1/4, color = 'black') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+0 not reasonable, samples are not enough. What's the difference between '$0' and 
+'not employed'. The trend move a little downward. 
+
+#### BorrowerAPR of IncomeVerifiable
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = IncomeVerifiable, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR))) + 
+  geom_boxplot(alpha = 1/4, color = 'black')
+```
+
+
+#### BorrowerAPR of PublicRecordsLast10Years
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = factor(PublicRecordsLast10Years), y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR) & 
+                       PublicRecordsLast10Years<4)) + 
+  geom_boxplot(alpha = 1/4, color = 'black') + 
+  geom_smooth(method = 'lm')
+```
+
+The same with CurrentDelinquencies, the diff is much larger between 0 and 1. For 
+this kind of variable, acturally, we can build a new variable, 0 and not 0, to 
+increase the relationship, am i right?
+
+#### IncomeVerifiable vs DebtToIncomeRatio
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = IncomeVerifiable, y = DebtToIncomeRatio), 
+       data = subset(loan_data, !is.na(DebtToIncomeRatio) & 
+                       !is.na(IncomeVerifiable))) + 
+  geom_boxplot(alpha = 1/4, color = 'black')
+#head(subset(loan_data, loan_data$DebtToIncomeRatio == 10.01), 20)
+```
+
+50% DebtToincome is 10.1 when IncomeVerifiable is false, this is the max value 
+for DebtToincome, what's the meaning of 10.1? it seems that the strong 
+relationship between DebtToIncomRatio and IncomeVerifiable is meanless and not 
+useful for our objective.
+
+# Bivariate Analysis
+
+##### Talk about some of the relationships you observed in this part of the \
+investigation. How did the feature(s) of interest vary with other features in \
+the dataset?
+
+There's very strong relationship between variable BorrowerAPR and CreditRating, 
+this meets our expectation, the higher CreditRating is, the lower BorrowerAPR 
+should be. 
+
+Moreover, there's strong relationship between variable BorrowerAPR and 
+ProsperScore while meanwhile CreditRating also has strong relationship with 
+ProsperScore. Moreover, from the bar plot, part of 'AA' borrowers still have 
+high risk score, e.g., 4. Therefore, we still should keep the ProsperScore 
+feature, it can descirbe a different dimension for BorrowerAPR prediction.
+
+BorrowerAPR has moderate relationship with CreditScoreRange while CreditRating 
+also has moderate relationship with CreditScoreRange. Moreover, we can see 
+CreditRating 'AA' borrowers may have a low CreditScore, why? Whatever, 
+CreditScoreRange is still one feature for the prediction.
+
+BorrowerAPR has weak relationship with BankcardUtilization, 
+AvaliableBankcardCredit and TradesNeverDelinquent. Meanwhile, they have weak 
+relationship between each other. Moreover, they have moderate relationship with 
+CreditScoreRange.
+
+What confuses me is that, where we get the CreditRating, ProsperScore? All these 
+features should combine the important credit information, like, payment history, 
+credit utilization, length of creit history, new credit, credit mix etc, all of 
+them are history feature. 
+
+
+
+### Did you observe any interesting relationships between the other features \
+(not the main feature(s) of interest)?
+
+InquiriesLast6Months has strong relationship with TotalInquiries, reasonable. 
+TradesNeverDelinquent has moderate relationship with CurrentDelinquencies, 
+DelinquenciesLast7Years, which makes sense. All these prove that the history 
+can predict the present status.
+
+IncomeVerifiable has strong relationship with DebtToIncomeRatio, then find that 
+when IncomeVeriiable is False, 50% DebtToIncomeRatio is max value 10.1, do not 
+know the meaning of this value, this relathionship should be not useful for our 
+objective.
+
+
+### What was the strongest relationship you found?
+
+BorrowerAPR and CreditRating
+
+# Multivariate Plots Section
+
+#### BorrowerAPR vs CreditRating vs ProsperScore
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots}
+ggplot(aes(x = CreditRating, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(CreditRating) &
+                       CreditRating != '' & !is.na(ProsperScore))) + 
+  geom_jitter(alpha = 1/4, aes(color = ProsperScore))+ 
+  scale_color_brewer(type = 'div',
+    guide = guide_legend(title = 'ProsperScore', reverse = T,
+    override.aes = list(alpha = 1, size = 2))) + 
+  theme(panel.background = element_rect(fill = 'DarkGray'))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = ProsperScore, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(CreditRating) &
+                       CreditRating != '' & !is.na(ProsperScore))) + geom_jitter(alpha = 1/100) + 
+  facet_wrap(~CreditRating)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = ProsperScore), 
+       data = subset(loan_data, !is.na(CreditRating) &
+                       CreditRating != '' & !is.na(ProsperScore))) + geom_bar() + 
+  facet_wrap(~CreditRating)
+```
+
+The trend is not that obvious, we can still see the small downward with Prosper. However, seems not for D and E.
+
+#### BorrowerAPR vs CreditRating vs CreditScoreRevision
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = CreditRating, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(ProsperScore))) + 
+  geom_jitter(alpha = 1/4, aes(color = CreditScoreRevision))+ 
+  scale_color_brewer(type = 'div',
+    guide = guide_legend(title = 'CreditScoreRevision', reverse = T,
+    override.aes = list(alpha = 1, size = 2))) + 
+  theme(panel.background = element_rect(fill = 'DarkGray'))
+```
+
+> 
+
+#### BorrowerAPR vs CreditRating vs BankcardUtilization
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = BankcardUtilization, y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(ProsperScore))) + 
+  geom_jitter(alpha = 1/10, aes(color = CreditRating))+ 
+  scale_color_brewer(type = 'div',
+    guide = guide_legend(title = 'CreditRating',
+    override.aes = list(alpha = 1, size = 2))) + 
+  xlim(0, quantile(subset(loan_data$BankcardUtilization, 
+                          !is.na(loan_data$BankcardUtilization)), 0.9)) + 
+  theme(panel.background = element_rect(fill = 'DarkGray'))
+```
+
+We know there's weak relationship between CreditRating and BankcardUtilization, 
+the figure proves that, the most obvious one is that 'AA' borrowers tend to have 
+small BankcardUtilization, 'HR' and 'E' borrowers tend to have big 
+BankcardUtilization.
+
+#### BorrowerAPR vs CreditRating vs TradesNeverDelinquent..percentage.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = TradesNeverDelinquent..percentage., y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(ProsperScore))) + 
+  geom_jitter(alpha = 1/10, aes(color = CreditRating))+ 
+  scale_color_brewer(type = 'div',
+    guide = guide_legend(title = 'CreditRating',
+    override.aes = list(alpha = 1, size = 2))) + 
+  xlim(0.2, quantile(subset(loan_data$TradesNeverDelinquent..percentage., !is.na(loan_data$TradesNeverDelinquent..percentage.)), 0.9)) + 
+  theme(panel.background = element_rect(fill = 'DarkGray'))
+```
+
+From the figure, we can see the weak relationship between 
+TradesNeverDelinquent..percentage. and CreditRating, more 'HR' borrowers have 
+small TradesNeverDelinquent..percentage. compared with 'AA' borrower. Moreover, 
+we can see that if keep the creditRating fixed, smaller 
+TradesNeverDelinquent..percentage tends to have bigger BorrowerAPR.
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. Were there features that strengthened each other in terms of \
+looking at your feature(s) of interest?
+
+BorrowerAPR has very strong relationship with CreditRating, strong relationship 
+with ProsperScore, moderate relationship with CreditScoreRevision, weak 
+relationship with BankcardUtilization, AvaliableBankcardCredit and 
+TradesNeverDelinquent. Moreover, all these features have strong, moderate, 
+weak relationship with CreditRating. However, if we dig deeper, can find each of 
+them can describe a different dimension view of data. Where, wonder how to get 
+the CreditRating value? calculated with history data, which includes payment 
+history, credit utilization, length of creit history, new credit, credit mix 
+etc? how to get the ProsperScore? how to get CreditScoreRange? what's their 
+difference? 
+
+### Were there any interesting or surprising interactions between features?
+
+lots of features have strong and moderate relationship with CreditRating. If all 
+these features, i.e., CreditRating, ProsperScore, CreditScoreRevision, take 
+account of history data, why they are different?, why we need them all? 
+
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the \
+strengths and limitations of your model.
+
+Want to build a model to predict the BorrowerAPR, will do this in future, can 
+use Machine Learning Algrithms.
+
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_One}
+summary(loan_data$BorrowerAPR)
+ggplot(aes(x = BorrowerAPR), 
+       data = subset(loan_data, !is.na(BorrowerAPR))) + 
+  geom_density(stat = "density") + 
+  xlab('BorrowerAPR') + 
+  ylab('Density') + 
+  ggtitle('Density of BorrowerAPR') + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### Description One
+
+From this figure, we can see several peaks, the most frequent one is around 0.2 
+and another bigger peak is around 0.36
+
+### Plot Two
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Two}
+loan_data$OrginationFee = loan_data$BorrowerAPR - loan_data$BorrowerRate
+p1 = ggplot(aes(x = CreditRating, y = BorrowerAPR), 
+            data = subset(loan_data, !is.na(BorrowerAPR) & 
+                            CreditRating != '')) + 
+  geom_boxplot(alpha = 1/4, aes(fill = CreditRating), show.legend = F) + scale_color_brewer(palette='Reds') + xlab('CreditRating') + ylab('BorrowerAPR') + 
+  ggtitle('BorrowerAPR of CreditRating') + 
+  theme(plot.title = element_text(hjust = 0.5))
+p2 = ggplot(aes(x = BorrowerAPR), data = subset(loan_data, !is.na(BorrowerAPR) & 
+                                                  CreditRating != '')) + 
+  geom_density(stat = "density", aes(color = CreditRating), show.legend = F) + 
+  xlab('BorrowerAPR') + ylab('Density') + 
+  ggtitle('Density of BorrowerAPR by CreditRating') + 
+  theme(plot.title = element_text(hjust = 0.5))
+grid.arrange(p1, p2, nrow = 2)
+```
+
+### Description Two
+
+The higher CreditRating is, the lower BorrowerAPR will be. However, the variance 
+for each CreditRating level is not small, There are still some other imported 
+features to control the finnal BorrowerAPR. From the trendency, it seems that 
+one linear model can be built to predict the BorrowerAPR.
+
+### Plot Three
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Three}
+ggplot(aes(x = TradesNeverDelinquent..percentage., y = BorrowerAPR), 
+       data = subset(loan_data, !is.na(ProsperScore))) + 
+  geom_jitter(alpha = 1/10, aes(color = CreditRating))+ 
+  scale_color_brewer(type = 'div',
+    guide = guide_legend(title = 'CreditRating',
+    override.aes = list(alpha = 1, size = 2))) + 
+  xlim(0.2, quantile(subset(loan_data$TradesNeverDelinquent..percentage., !is.na(loan_data$TradesNeverDelinquent..percentage.)), 0.9)) + 
+  ggtitle('BorrowerAPR of TradesNeverDelinquent (percentage)') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(panel.background = element_rect(fill = 'DarkGray'))
+```
+
+### Description Three
+
+From the figure, we can see the weak relationship between 
+TradesNeverDelinquent..percentage. and CreditRating, more 'HR' borrowers have 
+small TradesNeverDelinquent..percentage. compared with 'AA' borrower. Moreover, 
+we can see that if keep the creditRating fixed, smaller 
+TradesNeverDelinquent..percentage tends to have bigger BorrowerAPR.
+
+------
+
+# Reflection
+
+This is one loan data set, it takes me huge time to understand each variable, 
+which includes understand the variables based on excel data description, search 
+the related knowledge of credit loan and Prosper WebBank etc. 
+
+Then i try to explore the data by Univariate Plot and Bivariate Plot, begin to 
+know what i can find based on the data. BorrowerAPR, yes, that's what borrower 
+and lender most care about. For borrowers, they want to know how can reduce the 
+Borrower APR; For lenders, they want to know, what kind of loan will help them 
+make lots of money and minimize their loss. I find lots of information in 
+Bivariate Plot part. When the correlation matrix is calculated, i compare the 
+value with the plot and finally totally understand what's going on here.
+
+In order to predict the BorrowerAPR better, i create some new variables, e.g, 
+CreditRating, CreditScoreRange, CreditScoreRevision, EmploymentFlag, 
+LengthHistory. However, the influence is not that obvious, just the relationship 
+between BorrowerAPR and CreditScoreRevision improves a little compared with the 
+relationship between BorrowerAPR and CreditScoreRange. Actually, i also find 
+some variables, e.g., CurrentDelinquencies, PublicRecordsLast10Years etc, the 
+difference bettween 0 and 1 is much larger, in future, will reduce their levels 
+to 0 and not 0 to check more details.
+
+BorrowerAPR has very strong relationship with CreditRating, strong relationship 
+with ProsperScore, moderate relationship with CreditScoreRevision, weak 
+relationship with BankcardUtilization, AvaliableBankcardCredit and 
+TradesNeverDelinquent. Where, CreditRating has strong relationship with 
+ProsperScore, moderate relationship with CreditScoreRevision. However, 
+ProsperScore and CreditScoreRevision can describe the different view with 
+CreditRating, therefore, they should be both features in this prediction model. 
+Moreover, CreditScoreRevision has moderate relationship with 
+BankcardUtilization, AvaliableBankcardCredit and TradesNeverDelinquent. Have not 
+found the features that are not related to CreditRating but have relationship 
+with BorrowerAPR, which makes sense, since all the score data (i.e., 
+CreditRating, ProsperScore, CreditScoreRevision) has already taken account of 
+all the history data.
+
+I am still confused, how to get the CreditRating value? Calculated with history 
+data, which includes payment history, credit utilization, length of creit 
+history, new credit, credit mix etc? how to get the ProsperScore? Why so many 
+score data in this data set? 
+
+Lots of questions have not been answers, need more clues to answer these 
+questions. In other words, still not clear for part of data in the dataset. 
+This part information can not be got by exploring data, should contact the data 
+collectors for more details.
+
+In the future, will build the prediction model to predict the BorrowerAPR. 
+Will split the dataset to training data and testing data, build one model using 
+Machine Learning Algrithms.
