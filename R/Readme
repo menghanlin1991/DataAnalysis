@@ -1,0 +1,10 @@
+This is one loan data set, it takes me huge time to understand each variable, which includes understand the variables
+based on excel data description, search the related knowledge of credit loan and Prosper WebBank etc.
+
+Then i try to explore the data by Univariate Plot and Bivariate Plot, begin to know what i can find based on the data. 
+BorrowerAPR, yes, that’s what borrower and lender most care about. For borrowers, they want to know how can reduce the 
+Borrower APR; For lenders, they want to know, what kind of loan will help them make lots of money and minimize their loss. 
+I find lots of information in Bivariate Plot part. When the correlation matrix is calculated, i compare the value with 
+the plot and finally totally understand what’s going on here.
+
+if you want to know, please check project-loan-data-v1.html.
