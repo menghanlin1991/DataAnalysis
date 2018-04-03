@@ -3,12 +3,14 @@ Actually all the information we want can be collected by using tweepy library.
 
 Data Gathering
 
-For this project, before we start our data analysis travel, we have already got the twitter-archive-enhanced.csv 
-and image-prediction-mhl.csv. However, the information is not enough, therefore, we use tweepy to collect the 
-remaing necessary part, i.e., tweet_json.txt. Then we extract what we want from tweet_json.txt and create the 
-dog_rates_add.csv
+For this project, before we start our data analysis travel, we have already got
+the twitter-archive-enhanced.csv and image-prediction-mhl.csv. However, the 
+information is not enough, therefore, we use tweepy to collect the remaing 
+necessary part, i.e., tweet_json.txt. Then we extract what we want from 
+tweet_json.txt and create the dog_rates_add.csv
 
-Bingo, the data is ready, i.e., twitter-archive-enhanced.csv, image-prediction-mhl.csv, dog_rates_add.csv.
+Bingo, the data is ready, i.e., twitter-archive-enhanced.csv, 
+image-prediction-mhl.csv, dog_rates_add.csv.
 
 Data Assessing and cleanning
 we get the dog_rates_clean.csv after the whole processing.
